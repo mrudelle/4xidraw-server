@@ -3,7 +3,13 @@ import tempfile
 import vpype
 from vpype_cli import execute
 
-def process_svg_to_gcode(input_svg, output_gcode, target_page_size='297x210mm', split_layers=False):
+def process_svg_to_gcode(input_svg, output_gcode, *, 
+    target_page_size='297x210mm', 
+    split_layers=False,
+    pen_speed='2000',
+    pen_up_delay='0.1',
+    pen_down_delay='0.2',
+):
 
     target_page_width, target_page_height = vpype.convert_page_size(target_page_size)
 
@@ -29,6 +35,10 @@ def process_svg_to_gcode(input_svg, output_gcode, target_page_size='297x210mm', 
     #    print(l)
 
     config = Path('config/vpype-gcode.toml').read_text()
+
+    config = config.replace('{{pen_speed}}', pen_speed) \
+        .replace('{{pen_up_delay}}', pen_up_delay) \
+        .replace('{{pen_down_delay}}', pen_down_delay)
 
     with tempfile.NamedTemporaryFile(mode='w', suffix='.toml') as tmp_config:
         tmp_config.write(config)
