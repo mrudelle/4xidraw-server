@@ -1,3 +1,5 @@
+from pathlib import Path
+import tempfile
 import vpype
 from vpype_cli import execute
 
@@ -26,10 +28,18 @@ def process_svg_to_gcode(input_svg, output_gcode, target_page_size='297x210mm', 
     #for lid, l in doc.layers.items():
     #    print(l)
 
-    if split_layers:
-        execute(f"forlayer gwrite --profile 4xidraw {output_gcode}%_lid%.gcode end", doc)
-    else:
-        execute(f"gwrite --profile 4xidraw {output_gcode}.gcode", doc)
+    config = Path('config/vpype-gcode.toml').read_text()
+
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.toml') as tmp_config:
+        tmp_config.write(config)
+        tmp_config.flush()
+
+        vpype.config_manager.load_config_file(tmp_config.name)
+
+        if split_layers:
+            execute(f"forlayer gwrite --profile 4xidraw {output_gcode}%_lid%.gcode end", doc)
+        else:
+            execute(f"gwrite --profile 4xidraw {output_gcode}.gcode", doc)
 
     return width, height
 

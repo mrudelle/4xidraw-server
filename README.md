@@ -8,5 +8,5 @@ python3 -m venv .venv
 pip3 install -r requirements.txt
 
 python3 src/cli.py gen_gcode test_data/triangulate-1.svg
-python3 src/cli.py plot test_data/triangulate-1.gcode
+python3 src/cli.py plot_file test_data/triangulate-1.gcode
 ```

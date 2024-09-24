@@ -9,7 +9,6 @@ from wakepy import keep
 
 from gen_gcode import process_svg_to_gcode
 from xidraw_finder import find_4xidraw_port
-import grbl_serial
 
 app = Flask(__name__)
 CORS(app)
