@@ -18,7 +18,7 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Limit file size to 16 MB
 
 def plot_file(file_path):
     try:
-        serial_port = find_4xidraw_port(True)
+        serial_port = find_4xidraw_port()
 
         if not serial_port:
             print('Could not initialize connection')

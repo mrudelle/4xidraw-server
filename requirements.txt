@@ -1,5 +1,6 @@
 pySerial==3.5
 wakepy==0.9.1
 Flask==3.0.3
+Flask-Cors==5.0.0
 vpype==1.14.0
 vpype-gcode==0.13.0
