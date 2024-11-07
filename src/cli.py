@@ -56,12 +56,30 @@ def plot_gcode(file):
             serial_port.close()
 
 
-def gen_gcode(svg_file, split_layers, page_size, output_file):
+def gen_gcode(svg_file, split_layers, page_size, output_file, *, 
+    pen_speed='2000',
+    pen_up_delay='0.1', 
+    pen_down_delay='0.2',
+    exclude_layers=[],
+    line_simplify_tolerance='0.1mm',
+    line_sort=True
+):
     if not output_file:
         path = Path(svg_file)
-        output_file = str(path.parent / path.stem) 
+        output_file = str(path.parent / path.stem)
     
-    process_svg_to_gcode(svg_file, output_file, target_page_size=page_size, split_layers=split_layers)
+    process_svg_to_gcode(
+        svg_file, 
+        output_file, 
+        target_page_size=page_size,
+        split_layers=split_layers,
+        pen_speed=pen_speed,
+        pen_up_delay=pen_up_delay,
+        pen_down_delay=pen_down_delay,
+        exclude_layers=exclude_layers,
+        line_simplify_tolerance=line_simplify_tolerance,
+        line_sort=line_sort
+    )
 
 
 if __name__ == '__main__':
@@ -83,6 +101,13 @@ if __name__ == '__main__':
     parser_gen.add_argument('--split-layers', action='store_true', help='Split into separate layers')
     parser_gen.add_argument('--target-page-size', type=str, default='297x210mm', help='Target page size (default: horizontal A4)')
     parser_gen.add_argument('--output', type=str, help='Output file base name')
+    parser_gen.add_argument('--pen-speed', type=str, default='2000', help='Pen movement speed')
+    parser_gen.add_argument('--pen-up-delay', type=str, default='0.1', help='Delay after pen up movement')
+    parser_gen.add_argument('--pen-down-delay', type=str, default='0.2', help='Delay after pen down movement')
+    parser_gen.add_argument('--exclude-layers', type=str, default='', help='Layer IDs to exclude (comma separated)')
+    parser_gen.add_argument('--line-simplify-tolerance', type=str, default='0.1mm', help='Line simplification tolerance')
+    parser_gen.add_argument('--no-line-sort', action='store_false', dest='line_sort', help='Disable line sorting')
+    parser_gen.set_defaults(line_sort=True)
 
     args = parser.parse_args()
 
@@ -93,7 +118,19 @@ if __name__ == '__main__':
         plot_gcode(args.gcode_file)
 
     elif args.action == 'gen_gcode':
-        gen_gcode(args.svg_file, args.split_layers, args.target_page_size, args.output)
+        exclude_layers = args.exclude_layers.split(',') if args.exclude_layers else []
+        gen_gcode(
+            args.svg_file, 
+            args.split_layers, 
+            args.target_page_size, 
+            args.output,
+            pen_speed=args.pen_speed,
+            pen_up_delay=args.pen_up_delay,
+            pen_down_delay=args.pen_down_delay,
+            exclude_layers=exclude_layers,
+            line_simplify_tolerance=args.line_simplify_tolerance,
+            line_sort=args.line_sort
+        )
 
     else:
         print(f'Unrecognized command {args.action}')

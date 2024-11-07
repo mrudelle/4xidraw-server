@@ -2,6 +2,7 @@ from pathlib import Path
 import tempfile
 import vpype
 from vpype_cli import execute
+import json
 
 def process_svg_to_gcode(input_svg, output_gcode, *, 
     target_page_size='297x210mm', 
@@ -9,30 +10,36 @@ def process_svg_to_gcode(input_svg, output_gcode, *,
     pen_speed='2000',
     pen_up_delay='0.1',
     pen_down_delay='0.2',
+    exclude_layers=[], # list of layer ids (numbers) to exclude from the gcode
+    line_simplify_tolerance='0.1mm',
+    line_sort=True,
 ):
 
-    target_page_width, target_page_height = vpype.convert_page_size(target_page_size)
-
     doc = vpype.read_multilayer_svg(input_svg, 1)
+
+    if exclude_layers:
+        execute(f"ldelete {','.join(exclude_layers)}", doc)
+
+    # for lid, l in doc.layers.items():
+    #     print(lid, l.metadata)
 
     # Get the size of the svg document
     page_size = doc.page_size
     width = 0 if not page_size else page_size[0]
     height = 0 if not page_size else page_size[1]
 
+    # scale document to fit the target page size
+    target_page_width, target_page_height = vpype.convert_page_size(target_page_size)
     scale_factor = min(target_page_width / width, target_page_height / height)
-    
-    print(f"SVG scale factor: {scale_factor}")
-
-    # Apply transformations to fit the page
     doc.scale(scale_factor)
+
+    print(f"SVG scale factor: {scale_factor}")
     
-    execute("linesimplify -t 0.1mm", doc)
+    if line_simplify_tolerance:
+        execute(f"linesimplify -t {line_simplify_tolerance}", doc)
 
-    execute("linesort", doc)
-
-    #for lid, l in doc.layers.items():
-    #    print(l)
+    if line_sort:
+        execute("linesort", doc)
 
     config = Path('config/vpype-gcode.toml').read_text()
 
