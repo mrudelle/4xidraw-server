@@ -18,7 +18,8 @@ def process_svg_to_gcode(input_svg, output_gcode, *,
     doc = vpype.read_multilayer_svg(input_svg, 1)
 
     if exclude_layers:
-        execute(f"ldelete {','.join(exclude_layers)}", doc)
+        for lid in exclude_layers:
+            doc.pop(int(lid))
 
     # for lid, l in doc.layers.items():
     #     print(lid, l.metadata)
