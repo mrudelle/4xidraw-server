@@ -21,8 +21,8 @@ def process_svg_to_gcode(input_svg, output_gcode, *,
         for lid in exclude_layers:
             doc.pop(int(lid))
 
-    # for lid, l in doc.layers.items():
-    #     print(lid, l.metadata)
+    for lid, l in doc.layers.items():
+        print(lid, l.metadata)
 
     # Get the size of the svg document
     page_size = doc.page_size
@@ -37,10 +37,10 @@ def process_svg_to_gcode(input_svg, output_gcode, *,
     print(f"SVG scale factor: {scale_factor}")
     
     if line_simplify_tolerance:
-        execute(f"linesimplify -t {line_simplify_tolerance}", doc)
+        doc = execute(f"linesimplify -t {line_simplify_tolerance}", doc)
 
     if line_sort:
-        execute("linesort", doc)
+        doc = execute("linesort --two-opt", doc)
 
     config = Path('config/vpype-gcode.toml').read_text()
 
@@ -55,7 +55,7 @@ def process_svg_to_gcode(input_svg, output_gcode, *,
         vpype.config_manager.load_config_file(tmp_config.name)
 
         if split_layers:
-            execute(f"forlayer gwrite --profile 4xidraw {output_gcode}%_lid%.gcode end", doc)
+            execute(f"forlayer gwrite --profile 4xidraw {output_gcode}-%_lid%.gcode end", doc)
         else:
             execute(f"gwrite --profile 4xidraw {output_gcode}.gcode", doc)
 
