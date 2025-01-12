@@ -76,7 +76,7 @@ class Xidraw():
         try:
             self.port.write(command.encode('utf-8'))
 
-            for _ in range(50): # give 10s for the board to respond
+            for _ in range(500): # give 100s for the board to respond
                 message = self.port.readline().decode().strip()
                 
                 if message.strip() == 'ok':
