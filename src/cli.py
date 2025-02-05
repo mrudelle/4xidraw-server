@@ -3,6 +3,8 @@
 import re
 import argparse
 from pathlib import Path
+import sys
+import threading
 from gen_gcode import process_svg_to_gcode
 from xidraw_finder import find_4xidraw_port
 from wakepy import keep
@@ -23,6 +25,32 @@ def send_command(command):
         if serial_port:
             serial_port.close()
 
+
+def interactive_serial_session():
+    try:
+        serial_port = find_4xidraw_port()
+
+        if not serial_port:
+            print('Could not initialize connection')
+            exit(1)
+
+        # Create read thread
+        read_thread = threading.Thread(target=serial_port.pipe_to, args=(sys.stdout,))
+        read_thread.daemon = True
+        read_thread.start()
+        
+        while True:
+            command = input()
+            if command == 'exit':
+                break
+
+            serial_port.write(command + '\n')
+
+        serial_port.close()
+    except Exception as e:
+        print(f"Error sending command: {e}")
+        if serial_port:
+            serial_port.close()
 
 
 def plot_gcode(file):
@@ -109,6 +137,8 @@ if __name__ == '__main__':
     parser_gen.add_argument('--no-line-sort', action='store_false', dest='line_sort', help='Disable line sorting')
     parser_gen.set_defaults(line_sort=True)
 
+    parser_serial = subparsers.add_parser('serial', help='Interactive serial session')
+
     args = parser.parse_args()
 
     if args.action == 'send_command':
@@ -131,6 +161,12 @@ if __name__ == '__main__':
             line_simplify_tolerance=args.line_simplify_tolerance,
             line_sort=args.line_sort
         )
+
+    elif args.action == 'serial':
+        interactive_serial_session()
+
+    elif args.action is None:
+        parser.print_help()
 
     else:
         print(f'Unrecognized command {args.action}')

@@ -1,4 +1,5 @@
 import sys
+import time
 import serial
 import serial.tools.list_ports
 
@@ -64,6 +65,8 @@ def find_4xidraw_port():
 
 class Xidraw():
 
+    timeout = 100 # in seconds
+
     def __init__(self, port):
         self.port = port
 
@@ -74,18 +77,18 @@ class Xidraw():
         """
         
         try:
-            self.port.write(command.encode('utf-8'))
+            self.write(command)
 
-            for _ in range(500): # give 100s for the board to respond
+            for _ in range(self.timeout * 5):
                 message = self.port.readline().decode().strip()
                 
-                if message.strip() == 'ok':
+                if message == 'ok':
                     return
                 
                 if message != '':
                     print('Unexpected response from GRBL.') 
                     print(f'    Command: {command.strip()}')
-                    print(f'    Response: {message.strip()}')
+                    print(f'    Response: {message}')
             
             print(f'GRBL serial Timeout')
             print(f'    Command: {command.strip()}')
@@ -96,9 +99,15 @@ class Xidraw():
                 print(e)
                 sys.exit()
     
-    def query(self, command):
-        """ TODO """
-        pass
+    def pipe_to(self, file):
+        while True:
+            message = self.port.readline().decode().strip()
+            if message.strip() != '':
+                file.write(message + '\n')
+                file.flush()
+    
+    def write(self, command):
+        self.port.write(command.encode('utf-8'))
 
     def close(self):
         self.port.close()
