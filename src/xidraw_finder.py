@@ -51,6 +51,8 @@ def find_4xidraw_port():
 
     if not xidraw_ports:
         print("No 4xidraw device found.")
+        for p in serial.tools.list_ports.comports():
+            print(f"    {p.device}: {p.description}")
         return None
     
     for port in xidraw_ports:
