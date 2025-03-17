@@ -1,13 +1,14 @@
 import sys
 import serial
 import serial.tools.list_ports
+from serial.tools.list_ports_common import ListPortInfo
 
-def open_4xidraw_port(port):
+def open_4xidraw_port(port, baudrate=115200):
 
     try:
         ser = serial.Serial(
             port, 
-            baudrate=115200, 
+            baudrate=baudrate,
             timeout=.2, 
             dsrdtr=True, 
             rtscts=False
@@ -32,35 +33,42 @@ def open_4xidraw_port(port):
     except (OSError, serial.SerialException):
         pass
     
-
     ser.close()
     return None
+
+
+def is_compatible_device(port: ListPortInfo):
+    description = port.description.lower()
+    device = port.device.lower()
+    return (
+        'usb' in description or 
+        'arduino' in description or
+        'arduino' in device or 
+        'ttyUSB' in device
+    )
+
 
 def find_4xidraw_port():
     """
     Finds the serial port connected to a 4xidraw device.
-
-    Returns:
-        str: The port name if found, otherwise None.
     """
     xidraw_ports = [
         p.device
         for p in serial.tools.list_ports.comports()
-        if 'usb' in p.description.lower() or 'arduino' in p.device.lower() or 'ttyUSB' in p.device or 'arduino' in p.description.lower()
+        if is_compatible_device(p)
     ]
 
-    if not xidraw_ports:
-        print("No 4xidraw device found.")
-        for p in serial.tools.list_ports.comports():
-            print(f"    {p.device}: {p.description}")
-        return None
-    
     for port in xidraw_ports:
         xidraw_port = open_4xidraw_port(port)
         if xidraw_port:
             return Xidraw(xidraw_port)
+    
+    print("No compatible device found. Available ports:")
 
-    print("4xidraw device could not be identified.")
+    for p in serial.tools.list_ports.comports():
+        reason ='invalid response' if p in xidraw_ports else 'not a match'
+        print(f"\t{p.device}: {p.description} [{reason}]")
+    
     return None
 
 
