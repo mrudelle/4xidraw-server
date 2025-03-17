@@ -10,6 +10,9 @@ pip3 install -r requirements.txt
 # A cli exposes the base functions
 python3 src/cli.py gen_gcode test_data/triangulate-1.svg
 python3 src/cli.py plot_file test_data/triangulate-1.gcode
+python3 src/cli.py serial  # start an interactive serial session
+python3 src/cli.py send_command $$
+
 
 # start plotter server
 python3 src/server.py

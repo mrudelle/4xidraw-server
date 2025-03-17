@@ -1,5 +1,4 @@
 import sys
-import time
 import serial
 import serial.tools.list_ports
 
@@ -47,7 +46,7 @@ def find_4xidraw_port():
     xidraw_ports = [
         p.device
         for p in serial.tools.list_ports.comports()
-        if 'usb' in p.description.lower() or 'arduino' in p.device.lower() or 'ttyUSB' in p.device
+        if 'usb' in p.description.lower() or 'arduino' in p.device.lower() or 'ttyUSB' in p.device or 'arduino' in p.description.lower()
     ]
 
     if not xidraw_ports:
@@ -100,6 +99,7 @@ class Xidraw():
                 sys.exit()
     
     def pipe_to(self, file):
+        """ Pipe the output from the serial port to a file (eg. sys.stdout) """
         while True:
             message = self.port.readline().decode().strip()
             if message.strip() != '':
