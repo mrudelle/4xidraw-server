@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 import threading
 from gen_gcode import process_svg_to_gcode
-from xidraw_finder import find_4xidraw_port
+from serial_device.xidraw_finder import find_4xidraw_port
 from wakepy import keep
 import readline
 

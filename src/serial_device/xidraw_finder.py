@@ -3,6 +3,8 @@ import serial
 import serial.tools.list_ports
 from serial.tools.list_ports_common import ListPortInfo
 
+from serial_device.xidraw_device import XidrawDevice
+
 def open_4xidraw_port(port, baudrate=115200):
 
     try:
@@ -61,7 +63,7 @@ def find_4xidraw_port():
     for port in xidraw_ports:
         xidraw_port = open_4xidraw_port(port)
         if xidraw_port:
-            return Xidraw(xidraw_port)
+            return XidrawDevice(xidraw_port)
     
     print("No compatible device found. Available ports:")
 
@@ -70,57 +72,6 @@ def find_4xidraw_port():
         print(f"\t{p.device}: {p.description} [{reason}]")
     
     return None
-
-
-class Xidraw():
-
-    timeout = 100 # in seconds
-
-    def __init__(self, port):
-        self.port = port
-
-    def command(self, command):
-        """ 
-        command is a \n terminated string 
-        expects 'ok' from the board
-        """
-        
-        try:
-            self.write(command)
-
-            for _ in range(self.timeout * 5):
-                message = self.port.readline().decode().strip()
-                
-                if message == 'ok':
-                    return
-                
-                if message != '':
-                    print('Unexpected response from GRBL.') 
-                    print(f'    Command: {command.strip()}')
-                    print(f'    Response: {message}')
-            
-            print(f'GRBL serial Timeout')
-            print(f'    Command: {command.strip()}')
-            sys.exit()
-
-        except Exception as e:
-                print(f'Failed after command: {command.strip()}')
-                print(e)
-                sys.exit()
-    
-    def pipe_to(self, file):
-        """ Pipe the output from the serial port to a file (eg. sys.stdout) """
-        while True:
-            message = self.port.readline().decode().strip()
-            if message.strip() != '':
-                file.write(message + '\n')
-                file.flush()
-    
-    def write(self, command):
-        self.port.write(command.encode('utf-8'))
-
-    def close(self):
-        self.port.close()
 
 
 if __name__ == '__main__':
