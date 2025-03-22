@@ -1,5 +1,7 @@
 # 4xidraw server
 
+CLI and server to plot SVG and G-Code on a 4xidraw pen plotter. Or any other GRBL driver.
+
 ## Usage
 
 ```
