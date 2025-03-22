@@ -4,6 +4,11 @@ import threading
 import time
 from serial import Serial
 
+GRBL_BUFFER_SIZE_REFRESH_RATE = 0.05 # assumes motions are mostly 50ms long or more
+GRBL_BUFFER_NICE_SIZE = 16 # max acceptable occupancy for the planner buffer
+GRBL_BUFFER_NICE_SIZE_BLOCKING = 2 # for blocking commands like M3, empty most of the buffer first
+
+
 class XidrawDevice():
 
     timeout = 100 # in seconds
@@ -13,9 +18,6 @@ class XidrawDevice():
         self.port = port
         self.serial_lock = threading.Lock()
         self.command_queue = queue.Queue()
-
-        # Pauses sending commands the grbl buffer reaches this size
-        self.buffer_nice_size = 14
 
     def command(self, command):
         """ 
@@ -70,12 +72,21 @@ class XidrawDevice():
                 time.sleep(0.01)
                 continue
 
-            if not self._is_planning_buffer_free():
-                # Buffer is full, wait before checking again
-                time.sleep(0.1)
-                continue
-
             command = self.command_queue.get(block=False)
+            buffer_nice_size = self.buffer_nice_size_for_command(command)
+
+            # Wait for a free spot in the buffer
+            while self.running:
+                
+                planning_buffer_occupancy = self.planning_buffer_occupancy()
+                # print(f'Buffer occupancy: {planning_buffer_occupancy}')
+
+                if planning_buffer_occupancy <= buffer_nice_size:
+                    break
+
+                time.sleep(GRBL_BUFFER_SIZE_REFRESH_RATE)
+
+            # print(f'Sending command: {command.strip()}')
             self.command(command)
             self.command_queue.task_done()
 
@@ -96,17 +107,23 @@ class XidrawDevice():
         
         raise Exception(f'Buffer report mask not found in response to "$$": {message}')
     
-    def _is_planning_buffer_free(self):
+    def planning_buffer_occupancy(self):
         message = self.query(self.status_command + '\n')
         chunks = message.strip('<>').split(',')
 
         for chunk in chunks:
             if chunk.startswith('Buf:'):
-                buffer_size = int(chunk[4:])
-                
-                return buffer_size < self.buffer_nice_size
+                return int(chunk[4:])
         
         raise Exception(f'Buffer size not found in status message: {message}')
+    
+    def buffer_nice_size_for_command(self, command: str):
+        # M3 commands are blocking
+        # So we want want to wait until the buffer is almost empty
+        if command.strip().startswith('M3'):
+            return GRBL_BUFFER_NICE_SIZE_BLOCKING
+        else:
+            return GRBL_BUFFER_NICE_SIZE
 
     def query(self, command: str):
         try:
@@ -148,8 +165,8 @@ class XidrawDevice():
         self.command_queue.join()
 
     def wait_for_empty_planner_buffer(self):
-        while not self._is_planning_buffer_free():
-            time.sleep(0.1)
+        while self.planning_buffer_occupancy() > 0:
+            time.sleep(GRBL_BUFFER_SIZE_REFRESH_RATE)
     
     def stop_and_join(self):
         self.running = False
