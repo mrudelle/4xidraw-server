@@ -11,7 +11,8 @@ pip3 install -r requirements.txt
 python3 src/cli.py gen_gcode test_data/triangulate-1.svg
 python3 src/cli.py plot_file test_data/triangulate-1.gcode
 python3 src/cli.py serial  # start an interactive serial session
-python3 src/cli.py send_command $$
+python3 src/cli.py query $$
+python3 src/cli.py send_command "X100 Y50 F1000"
 
 
 # start plotter server
