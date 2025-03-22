@@ -49,9 +49,9 @@ class XidrawDevice():
                 print(e)
                 sys.exit()
     
-    def pipe_to(self, file):
+    def pipe_to(self, file, stop_signal: threading.Event = None):
         """ Pipe the output from the serial port to a file (eg. sys.stdout) """
-        while True:
+        while stop_signal is None or not stop_signal.is_set():
             message = self.port.readline().decode().strip()
             if message.strip() != '':
                 file.write(message + '\n')

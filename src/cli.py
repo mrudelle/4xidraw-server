@@ -28,6 +28,9 @@ def send_command(command):
 
 
 def interactive_serial_session():
+    serial_port = None
+    read_thread = None
+    stop_signal = threading.Event()
     try:
         serial_port = find_4xidraw_port()
 
@@ -36,7 +39,10 @@ def interactive_serial_session():
             exit(1)
 
         # Create read thread
-        read_thread = threading.Thread(target=serial_port.pipe_to, args=(sys.stdout,))
+        read_thread = threading.Thread(
+            target=serial_port.pipe_to,
+            args=(sys.stdout, stop_signal)
+        )
         read_thread.daemon = True
         read_thread.start()
         
@@ -47,9 +53,14 @@ def interactive_serial_session():
 
             serial_port.write(command + '\n')
 
-        serial_port.close()
+    except KeyboardInterrupt:
+        pass
     except Exception as e:
-        print(f"Error sending command: {e}")
+        print(f"Error during interactive session: {e}")
+    finally:
+        stop_signal.set()
+        if read_thread:
+            read_thread.join()
         if serial_port:
             serial_port.close()
 
