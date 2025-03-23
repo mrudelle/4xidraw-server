@@ -69,6 +69,11 @@ def is_motion_command(line: str) -> bool:
 def is_rapid_motion_command(line: str) -> bool:
     return line.startswith('G0 ') or line.startswith('G00 ')
 
+def is_go_home_command(line: str) -> bool:
+    command = line.split(' ')
+    command.sort()
+    return command == ['G0', 'X0', 'Y0'] or command == ['G00', 'X0', 'Y0']
+
 class GCodeSimulator:
     def __init__(self, settings: GrblSettings):
         self.settings = settings
@@ -273,10 +278,11 @@ class GCodeSimulator:
                 target_pos, target_feed = self._parse_coord(line, position, velocity)
                 next_pos, _ = self._parse_coord(next_line, target_pos, target_feed) if next_line and is_motion_command(next_line) else (target_pos, None)
 
-                bounds.update(target_pos)
+                if i != len(lines) - 1 or not is_go_home_command(line):
+                    # ignore the last G0 X0 Y0 command to calculate the bounds of the drawing
+                    bounds.update(target_pos)
 
                 motion = target_pos - position
-                motion_dir = motion.normalize()
                 next_motion = next_pos - target_pos
 
                 max_target_feed = self.max_speed_along_motion(motion)
