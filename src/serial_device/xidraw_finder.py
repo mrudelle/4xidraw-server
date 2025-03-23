@@ -3,7 +3,7 @@ import serial
 import serial.tools.list_ports
 from serial.tools.list_ports_common import ListPortInfo
 
-from serial_device.xidraw_device import XidrawDevice
+from .xidraw_device import XidrawDevice
 
 def open_4xidraw_port(port, baudrate=115200):
 

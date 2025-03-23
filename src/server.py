@@ -1,5 +1,5 @@
 import re
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
 import tempfile
 import os
@@ -7,10 +7,10 @@ import threading
 import logging
 from wakepy import keep
 
-from gen_gcode import process_svg_to_gcode
-from serial_device.xidraw_finder import find_4xidraw_port
+from .gen_gcode import process_svg_to_gcode
+from .serial_device.xidraw_finder import find_4xidraw_port
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='../templates', static_folder='../static')
 CORS(app)
 
 
@@ -45,6 +45,10 @@ def plot_file(file_path):
         print(f"Error plotting file: {e}")
         if serial_port:
             serial_port.close()
+
+@app.route('/')
+def home():
+    return render_template('index.html')
 
 @app.route('/plot', methods=['POST'])
 def upload_file():

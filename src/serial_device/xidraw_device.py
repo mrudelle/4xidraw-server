@@ -91,7 +91,7 @@ class XidrawDevice():
             self.command_queue.task_done()
 
     def _ensure_buffer_report_enabled(self):
-
+        # Note: Only tested against GRBL 0.9
         message = self.query('$$\n')
         for line in message.split('\n'):
             if line.startswith('$10='):
@@ -108,6 +108,7 @@ class XidrawDevice():
         raise Exception(f'Buffer report mask not found in response to "$$": {message}')
     
     def planning_buffer_occupancy(self):
+        # Note: Only tested against GRBL 0.9
         message = self.query(self.status_command + '\n')
         chunks = message.strip('<>').split(',')
 

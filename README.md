@@ -18,7 +18,9 @@ python3 src/cli.py send_command "X100 Y50 F1000"
 
 
 # start plotter server
-python3 src/server.py
+FLASK_APP=./src/server.py flask run --debug
+
+A simple web ui is available at http://127.0.0.1:5000/
 
 # test plotter server
 curl -X POST http://127.0.0.1:5000/plot \
