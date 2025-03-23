@@ -64,7 +64,10 @@ class Bounds:
         return self.max_y - self.min_y
 
 def is_motion_command(line: str) -> bool:
-    return line.startswith('G0') or line.startswith('G1')
+    return line.startswith('G0 ') or line.startswith('G1 ') or line.startswith('G00 ') or line.startswith('G01 ')
+
+def is_rapid_motion_command(line: str) -> bool:
+    return line.startswith('G0 ') or line.startswith('G00 ')
 
 class GCodeSimulator:
     def __init__(self, settings: GrblSettings):
@@ -279,7 +282,7 @@ class GCodeSimulator:
                 max_target_feed = self.max_speed_along_motion(motion)
                 max_target_accel = self.max_accel_along_motion(motion)
 
-                if line.startswith('G0') or (target_feed <= 0):
+                if is_rapid_motion_command(line) or (target_feed <= 0):
                     target_feed = max_target_feed
                 else:
                     target_feed = min(target_feed, max_target_feed)
