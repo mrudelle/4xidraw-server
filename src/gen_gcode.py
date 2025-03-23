@@ -7,7 +7,7 @@ import json
 def process_svg_to_gcode(input_svg, output_gcode, *, 
     target_page_size='297x210mm', 
     split_layers=False,
-    pen_speed='2000',
+    pen_speed='3000',
     pen_up_delay='0.1',
     pen_down_delay='0.2',
     exclude_layers=[], # list of layer ids (numbers) to exclude from the gcode
