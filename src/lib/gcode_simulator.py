@@ -3,17 +3,39 @@ import re
 import math
 import sys
 
+from shapely import total_bounds
+
 @dataclass
 class GrblSettings:
-    max_rate_x: float = 3000.0  # mm/min
-    max_rate_y: float = 3000.0  # mm/min
-    acceleration_x: float = 800.0  # mm/s^2
-    acceleration_y: float = 800.0  # mm/s^2
+    max_rate_x: float = 3000.0  # mm/min ($110)
+    max_rate_y: float = 3000.0  # mm/min ($111)
+    max_accel_x: float = 800.0  # mm/s^2 ($120)
+    max_accel_y: float = 800.0  # mm/s^2 ($121)
+    junction_deviation: float = 0.01  # mm ($11)
 
 @dataclass
 class Point:
     x: float = 0.0
     y: float = 0.0
+
+    def __sub__(self, other: 'Point') -> 'Point':
+        return Point(self.x - other.x, self.y - other.y)
+    
+    def __add__(self, other: 'Point') -> 'Point':
+        return Point(self.x + other.x, self.y + other.y)
+    
+    def length(self) -> float:
+        return math.sqrt(self.x**2 + self.y**2)
+    
+    def normalize(self) -> 'Point':
+        length = self.length()
+        return Point(self.x / length, self.y / length)
+    
+    def dot_product(self, other: 'Point') -> float:
+        return self.x * other.x + self.y * other.y
+    
+    def abs(self) -> 'Point':
+        return Point(abs(self.x), abs(self.y))
 
 @dataclass
 class Velocity:
@@ -41,6 +63,9 @@ class Bounds:
     def height(self) -> float:
         return self.max_y - self.min_y
 
+def is_motion_command(line: str) -> bool:
+    return line.startswith('G0') or line.startswith('G1')
+
 class GCodeSimulator:
     def __init__(self, settings: GrblSettings):
         self.settings = settings
@@ -51,9 +76,9 @@ class GCodeSimulator:
         self.bounds = Bounds()
         self.debug = False
         
-    def _parse_coord(self, line: str):
-        new_pos = Point(self.current_pos.x, self.current_pos.y)
-        feed = self.current_feed
+    def _parse_coord(self, line: str, current_pos: Point, current_feed) -> tuple[Point, float]:
+        new_pos = Point(current_pos.x, current_pos.y)
+        feed = current_feed
         
         x_match = re.search(r'X([-\d.]+)', line)
         y_match = re.search(r'Y([-\d.]+)', line)
@@ -69,133 +94,231 @@ class GCodeSimulator:
         p_match = re.search(r'P([-\d.]+)', line)
         s_match = re.search(r'S([-\d.]+)', line)
         
-        if p_match:  # P is in milliseconds
-            return float(p_match.group(1)) / 1000
+        if p_match:  
+            # P is in milliseconds
+            # return float(p_match.group(1)) / 1000
+
+            # in grbl 9.9, P is in seconds
+            return float(p_match.group(1))
         elif s_match:  # S is in seconds
             return float(s_match.group(1))
         return 0
+    
+    def calculate_junction_vmax(self, motion1, motion2):
+        """
+        Calculate the maximum junction speed for a CNC machine.
 
-    def _calculate_axis_move(self, start: float, end: float, start_vel: float, 
-                           max_feed: float, acceleration: float) -> tuple[float, float]:
-        distance = abs(end - start)
-        direction = 1 if end > start else -1
-        
-        if distance == 0:
-            return 0.0, start_vel
+        Parameters:
+        - unit_vector1: List representing the unit vector of the first segment.
+        - unit_vector2: List representing the unit vector of the second segment.
 
-        # Convert target velocity to mm/s
-        max_vel = min(max_feed, self.current_feed) / 60.0
-        
-        # If we're changing direction, we need to stop first
-        if math.copysign(1, start_vel) != direction and start_vel != 0:
-            decel_time = abs(start_vel) / acceleration
-            if self.debug:
-                print(f"Direction change: stopping from {start_vel:.2f} mm/s takes {decel_time:.3f}s")
-            self.current_vel.x = 0
-            self.current_vel.y = 0
-            return decel_time, 0.0
-            
-        # Calculate max reachable velocity given the distance
-        # v² = u² + 2as
-        max_reachable = math.sqrt(abs(start_vel * start_vel + 2 * acceleration * distance))
-        target_vel = min(max_vel, max_reachable) * direction
-        
-        if abs(target_vel) < abs(start_vel):
-            # Need to decelerate
-            t = (abs(start_vel) - abs(target_vel)) / acceleration
-            if self.debug:
-                print(f"Decel: {abs(start_vel):.2f} to {abs(target_vel):.2f} mm/s in {t:.3f}s")
-            return t, target_vel
+        Returns:
+        - vmax: Maximum junction speed (mm/sec).
+        """
+
+        if (motion1.length() == 0) or (motion2.length() == 0):
+            return 0
+
+        motion1 = motion1.normalize()
+        motion2 = motion2.normalize()
+
+        # Calculate the angle between the two unit vectors
+        theta = math.acos(motion1.dot_product(motion2))
+
+        # Calculate the radius of the junction
+        radius = self.settings.junction_deviation / math.sin(theta / 2)
+
+        # Determine the maximum centripetal acceleration
+        max_centripetal_acceleration = min(self.settings.max_accel_x, self.settings.max_accel_y)
+
+        # Calculate the maximum junction speed
+        vmax = math.sqrt(max_centripetal_acceleration * radius)
+
+        return vmax
+    
+    def max_speed_along_motion(self, motion: Point) -> float:
+        """ Calculate the maximum feed rate reachable along motion vector """
+        abs_motion_dir = motion.normalize().abs()
+
+        return Point(
+            self.settings.max_rate_x * abs_motion_dir.x / max(abs_motion_dir.x, abs_motion_dir.y),
+            self.settings.max_rate_y * abs_motion_dir.y / max(abs_motion_dir.x, abs_motion_dir.y)
+        ).length()
+    
+    def max_accel_along_motion(self, motion: Point) -> float:
+        """ Calculate the maximum acceleration reachable along motion vector """
+        abs_motion_dir = motion.normalize().abs()
+
+        return Point(
+            self.settings.max_accel_x * abs_motion_dir.x / max(abs_motion_dir.x, abs_motion_dir.y),
+            self.settings.max_accel_y * abs_motion_dir.y / max(abs_motion_dir.x, abs_motion_dir.y)
+        ).length()
+    
+    def _calculate_motion_time(
+            self, 
+            motion: Point, 
+            start_velocity: float, 
+            end_velocity: float, 
+            max_velocity: float, 
+            max_accel: float
+        ) -> tuple[float, float]:
+        """
+        Calculate the minimum time required for a motion while respecting 
+        max acceleration and max speed.
+
+        It may happen that the end velocity cannot be reached so the real end_velocity is returned.
+
+        Parameters:
+        - motion: The motion vector (Point).
+        - start_velocity: The starting velocity along the motion vector (float, mm/min).
+        - end_velocity: The target velocity at the end of the motion (float, mm/min).
+        - max_velocity: The feed rate for the motion (float, mm/min).
+        - max_accel: The maximum acceleration for the motion (float, mm/s^2).
+
+        Returns:
+        - motion_time: The time required for the motion (float, seconds).
+        - final_velocity: The final velocity (float, mm/min) at the end of the motion.
+        """
+        # Convert velocities from mm/min to mm/s
+        start_velocity /= 60.0
+        end_velocity /= 60.0
+        max_velocity /= 60.0
+
+        # Calculate the total distance of the motion
+        distance = motion.length()
+
+        # Case 1: Can reach max velocity
+        accel_distance = (max_velocity**2 - start_velocity**2) / (2 * max_accel)
+        decel_distance = (max_velocity**2 - end_velocity**2) / (2 * max_accel)
+
+        if accel_distance + decel_distance <= distance:
+            # Accelerate to max velocity, cruise, then decelerate
+            accel_time = (max_velocity - start_velocity) / max_accel
+            decel_time = (max_velocity - end_velocity) / max_accel
+            cruise_distance = distance - (accel_distance + decel_distance)
+            cruise_time = cruise_distance / max_velocity
+            total_time = accel_time + cruise_time + decel_time
+            return total_time, end_velocity * 60.0  # Convert back to mm/min
+
+        # Case 2: Cannot reach max velocity
+        # Solve for the peak velocity achievable within the distance
+        peak_velocity_squared = (
+            (start_velocity**2 + end_velocity**2) / 2 +
+            max_accel * distance
+        )
+        if peak_velocity_squared < 0:
+            peak_velocity = 0
         else:
-            # Need to accelerate
-            t = (abs(target_vel) - abs(start_vel)) / acceleration
-            if self.debug:
-                print(f"Accel: {abs(start_vel):.2f} to {abs(target_vel):.2f} mm/s in {t:.3f}s")
-            return t, target_vel
+            peak_velocity = math.sqrt(peak_velocity_squared)
 
-    def _calculate_move_time(self, start: Point, end: Point, feed: float) -> float:
-        if feed == 0:
-            feed = self.current_feed
-        
-        # Calculate time for each axis
-        time_x, end_vel_x = self._calculate_axis_move(
-            start.x, end.x, self.current_vel.x,
-            self.settings.max_rate_x, self.settings.acceleration_x
-        )
-        
-        time_y, end_vel_y = self._calculate_axis_move(
-            start.y, end.y, self.current_vel.y,
-            self.settings.max_rate_y, self.settings.acceleration_y
-        )
-        
-        # Total time is the max of the two axis times
-        total_time = max(time_x, time_y)
-        
-        # Update velocities
-        self.current_vel.x = end_vel_x
-        self.current_vel.y = end_vel_y
-        
-        if self.debug:
-            dx = end.x - start.x
-            dy = end.y - start.y
-            distance = math.sqrt(dx*dx + dy*dy)
-            print(f"Move: ({start.x:.1f},{start.y:.1f}) -> ({end.x:.1f},{end.y:.1f})")
-            print(f"Distance: {distance:.1f}mm, Time: {total_time:.3f}s")
-            print(f"End velocity: {self.current_vel.x:.1f}, {self.current_vel.y:.1f} mm/s\n")
-        
-        return total_time
+        if peak_velocity > max_velocity:
+            peak_velocity = max_velocity
 
+        # Recalculate distances for acceleration and deceleration
+        accel_distance = (peak_velocity**2 - start_velocity**2) / (2 * max_accel)
+        decel_distance = (peak_velocity**2 - end_velocity**2) / (2 * max_accel)
+
+        if abs(accel_distance + decel_distance - distance) < 1e-6: # account for floating point errors
+            # Accelerate to peak velocity, then decelerate
+            accel_time = (peak_velocity - start_velocity) / max_accel
+            decel_time = (peak_velocity - end_velocity) / max_accel
+            total_time = accel_time + decel_time
+            return total_time, end_velocity * 60.0  # Convert back to mm/min
+
+        # Case 3: Constant deceleration, cannot reach end velocity
+        if accel_distance + decel_distance > distance and start_velocity > end_velocity:
+            # Solve for the achievable end velocity
+            achievable_end_velocity_squared = (
+                start_velocity**2 - 2 * max_accel * distance
+            )
+            achievable_end_velocity = math.sqrt(max(0, achievable_end_velocity_squared))
+            decel_time = (start_velocity - achievable_end_velocity) / max_accel
+            return decel_time, achievable_end_velocity * 60.0  # Convert back to mm/min
+
+        # Case 4: Constant acceleration, cannot reach end velocity
+        if accel_distance + decel_distance > distance and start_velocity < end_velocity:
+            # Solve for the achievable end velocity
+            achievable_end_velocity_squared = (
+                start_velocity**2 + 2 * max_accel * distance
+            )
+            achievable_end_velocity = math.sqrt(max(0, achievable_end_velocity_squared))
+            accel_time = (achievable_end_velocity - start_velocity) / max_accel
+            return accel_time, achievable_end_velocity * 60.0  # Convert back to mm/min
+
+        # Default case (should not happen)
+        #return 0.0, start_velocity * 60.0  # No motion
+        raise ValueError("Cannot calculate motion time")
+    
     def estimate_time(self, gcode: str) -> tuple[float, Bounds]:
-        """Estimate the time to execute the G-code and return time and bounds"""
-        BLOCK_PROCESSING_TIME = 0.020  # 20ms per block overhead
-        ACCELERATION_PLANNING_TIME = 0.015  # 15ms for acceleration planning
-        SERIAL_DELAY = 0.010  # 10ms serial communication overhead
-        SPINDLE_CHANGE_TIME = 0.000  # 500ms for pen up/down
-        MIN_MOVE_TIME = 0.050  # 50ms minimum for any movement
-        
+        velocity = 0.0
+        position = Point()  # assume we start at 0,0
+
         lines = gcode.strip().split('\n')
-        self.bounds.update(self.current_pos)
-        
-        for line in lines:
-            line = line.strip().upper()
-            
+
+        total_time = 0.0
+        bounds = Bounds()
+
+        for i in range(len(lines)):
+            line = lines[i].strip().upper()
+            next_line = lines[i + 1].strip().upper() if i + 1 < len(lines) else None
+
+            # skip comment lines
             if not line or line.startswith(';') or line.startswith('('):
                 continue
-                
-            # Add serial and processing overhead for each non-comment line
-            self.total_time += BLOCK_PROCESSING_TIME + SERIAL_DELAY
-                
-            if any(cmd in line for cmd in ['G0', 'G1']):
-                target_pos, feed = self._parse_coord(line)
-                
-                if 'G0' in line:
-                    feed = max(self.settings.max_rate_x, self.settings.max_rate_y)
-                
-                if feed == 0:
-                    feed = self.current_feed if self.current_feed > 0 else self.settings.max_rate_x
-                
-                move_time = self._calculate_move_time(self.current_pos, target_pos, feed)
-                self.total_time += max(move_time, MIN_MOVE_TIME) + ACCELERATION_PLANNING_TIME
-                
-                self.current_pos = target_pos
-                self.current_feed = feed
-                self.bounds.update(self.current_pos)
-            
+
+            if is_motion_command(line):
+                target_pos, target_feed = self._parse_coord(line, position, velocity)
+                next_pos, _ = self._parse_coord(next_line, target_pos, target_feed) if next_line and is_motion_command(next_line) else (target_pos, None)
+
+                bounds.update(target_pos)
+
+                motion = target_pos - position
+                motion_dir = motion.normalize()
+                next_motion = next_pos - target_pos
+
+                max_target_feed = self.max_speed_along_motion(motion)
+                max_target_accel = self.max_accel_along_motion(motion)
+
+                if line.startswith('G0') or (target_feed <= 0):
+                    target_feed = max_target_feed
+                else:
+                    target_feed = min(target_feed, max_target_feed)
+
+                # max possible velocity at the end of this move
+                junction_vmax = self.calculate_junction_vmax(motion, next_motion)
+
+                # realistic target end velocity
+                end_velocity = min(target_feed, junction_vmax)
+
+                motion_time, real_end_velocity = self._calculate_motion_time(motion, velocity, end_velocity, target_feed, max_target_accel)
+
+                if (real_end_velocity - end_velocity > 1e-6):
+                    print(f"Warning: Could not reach target feed rate at line {i + 1} ({real_end_velocity:.2f} < {end_velocity:.2f})")
+                elif (real_end_velocity - end_velocity < -1e-6):
+                    print(f"Warning: Exceeded target feed rate at line {i + 1} ({real_end_velocity:.2f} > {end_velocity:.2f})")
+                    real_end_velocity = end_velocity
+
+                velocity = real_end_velocity
+                position = target_pos
+                total_time += motion_time
+
             elif 'G4' in line:
-                self.current_vel = Velocity()  # Full stop
-                self.total_time += self._parse_dwell(line)
+                dwell_time = self._parse_dwell(line)
+                total_time += dwell_time
+
             elif line.startswith('M3'):
-                self.total_time += SPINDLE_CHANGE_TIME  # Pen up/down time
-                    
-        return self.total_time, self.bounds
+                pass # pen down and up are followed or preceded by dwell commands
+
+        return total_time, bounds
 
 if __name__ == '__main__':
     # Example usage
     settings = GrblSettings(
         max_rate_x=3000,      # mm/min
         max_rate_y=3000,      # mm/min
-        acceleration_x=800,   # mm/s^2
-        acceleration_y=800    # mm/s^2
+        max_accel_x=800,   # mm/s^2
+        max_accel_y=800,    # mm/s^2
+        junction_deviation=0.01,  # mm
     )
     
     simulator = GCodeSimulator(settings)
