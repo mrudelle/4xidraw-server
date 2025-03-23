@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 import threading
 from gen_gcode import process_svg_to_gcode
-from xidraw_finder import find_4xidraw_port
+from serial_device.xidraw_finder import find_4xidraw_port
 from wakepy import keep
 import readline
 
@@ -28,6 +28,9 @@ def send_command(command):
 
 
 def interactive_serial_session():
+    serial_port = None
+    read_thread = None
+    stop_signal = threading.Event()
     try:
         serial_port = find_4xidraw_port()
 
@@ -36,7 +39,10 @@ def interactive_serial_session():
             exit(1)
 
         # Create read thread
-        read_thread = threading.Thread(target=serial_port.pipe_to, args=(sys.stdout,))
+        read_thread = threading.Thread(
+            target=serial_port.pipe_to,
+            args=(sys.stdout, stop_signal)
+        )
         read_thread.daemon = True
         read_thread.start()
         
@@ -47,9 +53,14 @@ def interactive_serial_session():
 
             serial_port.write(command + '\n')
 
-        serial_port.close()
+    except KeyboardInterrupt:
+        pass
     except Exception as e:
-        print(f"Error sending command: {e}")
+        print(f"Error during interactive session: {e}")
+    finally:
+        stop_signal.set()
+        if read_thread:
+            read_thread.join()
         if serial_port:
             serial_port.close()
 
@@ -64,6 +75,8 @@ def plot_gcode(file):
         
         def send_g_code_file(file):
 
+            serial_port.start()
+
             with open(file, 'r') as f:
                 for l in f.readlines():
                     # remove comments
@@ -72,7 +85,11 @@ def plot_gcode(file):
                     if l.strip() == '':
                         continue
 
-                    serial_port.command(l)
+                    serial_port.add_command(l)
+                
+            serial_port.wait_for_empty_queue()
+            serial_port.wait_for_empty_planner_buffer()
+            serial_port.stop_and_join()
 
         with keep.running():
             send_g_code_file(file)
@@ -110,6 +127,22 @@ def gen_gcode(svg_file, split_layers, page_size, output_file, *,
         line_sort=line_sort
     )
 
+def query(command):
+    try:
+        serial_port = find_4xidraw_port()
+
+        if not serial_port:
+            print('Could not initialize connection')
+            exit(1)
+        
+        print(serial_port.query(command + '\n'))
+
+        serial_port.close()
+    except Exception as e:
+        print(f"Error querying: {e}")
+        if serial_port:
+            serial_port.close()
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='G-code Utility CLI')
@@ -138,7 +171,12 @@ if __name__ == '__main__':
     parser_gen.add_argument('--no-line-sort', action='store_false', dest='line_sort', help='Disable line sorting')
     parser_gen.set_defaults(line_sort=True)
 
+    # serial sub-command
     parser_serial = subparsers.add_parser('serial', help='Interactive serial session')
+
+    # query sub-command
+    parser_query = subparsers.add_parser('query', help='Query grbl interface')
+    parser_query.add_argument('command', type=str, help='Command to query')
 
     args = parser.parse_args()
 
@@ -165,6 +203,9 @@ if __name__ == '__main__':
 
     elif args.action == 'serial':
         interactive_serial_session()
+    
+    elif args.action == 'query':
+        query(args.command)
 
     elif args.action is None:
         parser.print_help()
