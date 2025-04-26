@@ -7,7 +7,7 @@ CLI and server to plot SVG and G-Code on a 4xidraw pen plotter. Or any other GRB
 ```
 python3 -m venv .venv
 .venv/bin/activate
-pip3 install -r requirements.txt
+pip install -r requirements.txt
 
 # A cli exposes the base functions
 python3 src/cli.py gen_gcode test_data/triangulate-1.svg

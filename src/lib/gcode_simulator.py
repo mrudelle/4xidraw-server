@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import datetime
 import re
 import math
 import sys
@@ -84,17 +85,22 @@ class GCodeSimulator:
         self.bounds = Bounds()
         self.debug = False
         
-    def _parse_coord(self, line: str, current_pos: Point, current_feed) -> tuple[Point, float]:
+    def _parse_coord(self, line: str, current_pos: Point, previous_feed) -> tuple[Point, float]:
         new_pos = Point(current_pos.x, current_pos.y)
-        feed = current_feed
+        feed = previous_feed
         
         x_match = re.search(r'X([-\d.]+)', line)
         y_match = re.search(r'Y([-\d.]+)', line)
+
+
         f_match = re.search(r'F([-\d.]+)', line)
         
-        if x_match: new_pos.x = float(x_match.group(1))
-        if y_match: new_pos.y = float(y_match.group(1))
-        if f_match: feed = float(f_match.group(1))
+        if x_match: 
+          new_pos.x = float(x_match.group(1))
+        if y_match: 
+          new_pos.y = float(y_match.group(1))
+        if f_match: 
+          feed = float(f_match.group(1))
             
         return new_pos, feed
 
@@ -121,7 +127,7 @@ class GCodeSimulator:
         - unit_vector2: List representing the unit vector of the second segment.
 
         Returns:
-        - vmax: Maximum junction speed (mm/sec).
+        - vmax: Maximum junction speed (mm/min).
         """
 
         if (motion1.length() == 0) or (motion2.length() == 0):
@@ -141,7 +147,9 @@ class GCodeSimulator:
 
         max_centripetal_acceleration = min(self.settings.max_accel_x, self.settings.max_accel_y)
 
-        return math.sqrt(max_centripetal_acceleration * junction_radius)
+        vmax_mm_s = math.sqrt(max_centripetal_acceleration * junction_radius)
+
+        return vmax_mm_s * 60.0
     
     def max_speed_along_motion(self, motion: Point) -> float:
         """ Calculate the maximum feed rate reachable along motion vector """
@@ -258,6 +266,7 @@ class GCodeSimulator:
     
     def estimate_time(self, gcode: str) -> tuple[float, Bounds]:
         velocity = 0.0
+        last_feed = min(self.settings.max_rate_x, self.settings.max_rate_y)
         position = Point()  # assume we start at 0,0
 
         lines = gcode.strip().split('\n')
@@ -274,15 +283,19 @@ class GCodeSimulator:
                 continue
 
             if is_motion_command(line):
-                target_pos, target_feed = self._parse_coord(line, position, velocity)
-                next_pos, _ = self._parse_coord(next_line, target_pos, target_feed) if next_line and is_motion_command(next_line) else (target_pos, None)
+                target_pos, target_feed = self._parse_coord(line, position, last_feed)
+                last_feed = target_feed
+                next_pos, _ = self._parse_coord(next_line, target_pos, velocity) if next_line and is_motion_command(next_line) else (target_pos, None)
 
+                # calculate the bounds of the drawing, but ignore the last G0 X0 Y0 (return to home) 
                 if i != len(lines) - 1 or not is_go_home_command(line):
-                    # ignore the last G0 X0 Y0 command to calculate the bounds of the drawing
                     bounds.update(target_pos)
 
                 motion = target_pos - position
                 next_motion = next_pos - target_pos
+
+                if motion.length() == 0:
+                    continue
 
                 max_target_feed = self.max_speed_along_motion(motion)
                 max_target_accel = self.max_accel_along_motion(motion)
@@ -335,7 +348,7 @@ if __name__ == '__main__':
     test_gcode = sys.stdin.read()
     
     time, bounds = simulator.estimate_time(test_gcode)
-    print(f"Estimated time: {time:.2f} seconds")
+    print(f"Estimated execution time: {datetime.timedelta(seconds=round(time))}")
     print(f"Bounds:")
     print(f"  X: {bounds.min_x:.1f} to {bounds.max_x:.1f} (width: {bounds.width:.1f}mm)")
     print(f"  Y: {bounds.min_y:.1f} to {bounds.max_y:.1f} (height: {bounds.height:.1f}mm)")
