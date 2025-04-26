@@ -11,6 +11,7 @@ class GrblSettings:
     max_accel_x: float = 800.0  # mm/s^2 ($120)
     max_accel_y: float = 800.0  # mm/s^2 ($121)
     junction_deviation: float = 0.01  # mm ($11)
+    grbl_version: str = '0.9i'  # Version of GRBL used
 
 @dataclass
 class Point:
@@ -37,11 +38,6 @@ class Point:
     
     def abs(self) -> 'Point':
         return Point(abs(self.x), abs(self.y))
-
-@dataclass
-class Velocity:
-    x: float = 0.0
-    y: float = 0.0
 
 @dataclass
 class Bounds:
@@ -79,7 +75,6 @@ class GCodeSimulator:
     def __init__(self, settings: GrblSettings):
         self.settings = settings
         self.current_pos = Point()
-        self.current_vel = Velocity()
         self.current_feed = 0.0
         self.total_time = 0.0
         self.bounds = Bounds()
@@ -109,13 +104,16 @@ class GCodeSimulator:
         s_match = re.search(r'S([-\d.]+)', line)
         
         if p_match:  
-            # P is in milliseconds
-            # return float(p_match.group(1)) / 1000
-
             # in grbl 9.9, P is in seconds
-            return float(p_match.group(1))
+            if self.settings.grbl_version.startswith('0.9'):
+                return float(p_match.group(1))
+
+            # P is in milliseconds
+            return float(p_match.group(1)) / 1000
+        
         elif s_match:  # S is in seconds
             return float(s_match.group(1))
+        
         return 0
     
     def calculate_junction_vmax(self, motion1, motion2):
