@@ -3,8 +3,6 @@ import re
 import math
 import sys
 
-from shapely import total_bounds
-
 @dataclass
 class GrblSettings:
     max_rate_x: float = 3000.0  # mm/min ($110)
@@ -29,6 +27,8 @@ class Point:
     
     def normalize(self) -> 'Point':
         length = self.length()
+        if length == 0:
+            return Point(0, 0)
         return Point(self.x / length, self.y / length)
     
     def dot_product(self, other: 'Point') -> float:
@@ -130,19 +130,18 @@ class GCodeSimulator:
         motion1 = motion1.normalize()
         motion2 = motion2.normalize()
 
-        # Calculate the angle between the two unit vectors
+        # angle of the junction
         theta = math.acos(motion1.dot_product(motion2))
 
-        # Calculate the radius of the junction
-        radius = self.settings.junction_deviation / math.sin(theta / 2)
+        # If the angle is very small, the head can pass the junction at max speed
+        if abs(theta) < 1e-6:
+          return max(self.settings.max_rate_x, self.settings.max_rate_y)
 
-        # Determine the maximum centripetal acceleration
+        junction_radius = self.settings.junction_deviation / math.sin(theta / 2)
+
         max_centripetal_acceleration = min(self.settings.max_accel_x, self.settings.max_accel_y)
 
-        # Calculate the maximum junction speed
-        vmax = math.sqrt(max_centripetal_acceleration * radius)
-
-        return vmax
+        return math.sqrt(max_centripetal_acceleration * junction_radius)
     
     def max_speed_along_motion(self, motion: Point) -> float:
         """ Calculate the maximum feed rate reachable along motion vector """
@@ -192,7 +191,7 @@ class GCodeSimulator:
         end_velocity /= 60.0
         max_velocity /= 60.0
 
-        # Calculate the total distance of the motion
+        # total distance of the motion
         distance = motion.length()
 
         # Case 1: Can reach max velocity
