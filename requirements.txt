@@ -4,3 +4,6 @@ Flask==3.0.3
 Flask-Cors==5.0.0
 vpype==1.14.0
 vpype-gcode==0.13.0
+numpy==2.2.5
+matplotlib==3.10.1
+gcode-simulator==0.2.1

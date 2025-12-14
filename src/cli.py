@@ -5,6 +5,7 @@ import argparse
 from pathlib import Path
 import sys
 import threading
+from gcode_simulator.gcode_simulator import GCodeSimulator
 from gen_gcode import process_svg_to_gcode
 from serial_device.xidraw_finder import find_4xidraw_port
 from wakepy import keep
@@ -178,6 +179,10 @@ if __name__ == '__main__':
     parser_query = subparsers.add_parser('query', help='Query grbl interface')
     parser_query.add_argument('command', type=str, help='Command to query')
 
+    # simulate sub-command
+    parser_simulate = subparsers.add_parser('simulate', help='Simulate G-code commands')
+    parser_simulate.add_argument('gcode_file', type=str, help='G-code file to simulate')
+
     args = parser.parse_args()
 
     if args.action == 'send_command':
@@ -209,6 +214,9 @@ if __name__ == '__main__':
 
     elif args.action is None:
         parser.print_help()
+
+    elif args.action == 'simulate':
+        simulator = GCodeSimulator()
 
     else:
         print(f'Unrecognized command {args.action}')
